@@ -1,3 +1,8 @@
+"""
+Iterates over products of specified shops, downloads data provided by them, saves it.
+
+"""
+
 import csv
 import logging
 import os
