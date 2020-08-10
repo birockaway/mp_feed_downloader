@@ -15,18 +15,38 @@ import logging_gelf.formatters
 import logging_gelf.handlers
 
 
-def generate_pages(base_url: str, client_id: str, sleep_time: float = 1):
+class RepeatedlyFailedRequest(Exception):
+    pass
+
+
+def generate_pages(
+    base_url: str, client_id: str, sleep_time: float = 1, max_fails_per_call: int = 3
+):
     """Yield pages with product info until the last page is reached."""
     total_pages = 2  # initialize to an arbitrary value > 1
+    failed_attempts = 0
     page_num = 1
     while page_num <= total_pages:
         time.sleep(sleep_time)
         parameters = {"client_id": client_id, "filter": "basic", "page": page_num}
-        response = requests.get(base_url, params=parameters).json()
-        logging.info(f"Page {page_num} of {total_pages} downloaded.")
-        total_pages = response["paging"]["pages"]
-        page_num += 1
-        yield response["data"]
+        try:
+            response = requests.get(base_url, params=parameters).json()
+        except ConnectionResetError as e:
+            logging.error(e)
+            if page_num == failed_page:
+                failed_attempts += 1
+            else:
+                failed_attempts = 1
+            failed_page = page_num
+            if failed_attempts > max_fails_per_call:
+                raise RepeatedlyFailedRequest(
+                    f"Request failed more than {max_fails_per_call} times."
+                )
+        else:
+            total_pages = response["paging"]["pages"]
+            logging.info(f"Page {page_num} of {total_pages} downloaded.")
+            page_num += 1
+            yield response["data"]
 
 
 def main():
@@ -55,6 +75,7 @@ def main():
     api_url = params["api_url"]
     shops = params["shops"]
     interbatch_sleep_seconds = params["interbatch_sleep_seconds"]
+    max_fails_per_call = params["max_fails_per_call"]
 
     utc_timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -66,7 +87,10 @@ def main():
         for shop in shops:
             logger.info(f"Processing vendor_id {shop['vendor_id']}")
             for batch in generate_pages(
-                api_url, shop["#client_id"], sleep_time=interbatch_sleep_seconds
+                api_url,
+                shop["#client_id"],
+                sleep_time=interbatch_sleep_seconds,
+                max_fails_per_call=max_fails_per_call,
             ):
                 # write batch by lines to be able to add columns
                 for row in batch:
