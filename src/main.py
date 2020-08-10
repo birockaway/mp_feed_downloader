@@ -24,6 +24,7 @@ def generate_pages(
 ):
     """Yield pages with product info until the last page is reached."""
     total_pages = 2  # initialize to an arbitrary value > 1
+    failed_page = 0  # page number is never 0, so, this will not cause conflict
     failed_attempts = 0
     page_num = 1
     while page_num <= total_pages:
