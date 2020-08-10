@@ -32,7 +32,7 @@ def generate_pages(
         parameters = {"client_id": client_id, "filter": "basic", "page": page_num}
         try:
             response = requests.get(base_url, params=parameters).json()
-        except ConnectionResetError as e:
+        except Exception as e:
             logging.error(e)
             if page_num == failed_page:
                 failed_attempts += 1
