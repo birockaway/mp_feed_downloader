@@ -14,7 +14,6 @@ from keboola import docker
 import logging_gelf.formatters
 import logging_gelf.handlers
 
-
 class RepeatedlyFailedRequest(Exception):
     pass
 
@@ -80,28 +79,56 @@ def main():
 
     utc_timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
+    path_variants = f'{os.getenv("KBC_DATADIR")}out/tables/results_variants.csv'
+    variants_column_names = params["variants_column_names"]
+    parameters_var = {"client_id": "mp_vivantis_8sYQvq_cHJvZHwzMDAz", "filter": "basic"}
+
     with open(path, "w") as outfile:
         dict_writer = csv.DictWriter(
             outfile, fieldnames=column_names, extrasaction="ignore"
         )
         dict_writer.writeheader()
-        for shop in shops:
-            logger.info(f"Processing vendor_id {shop['vendor_id']}")
-            for batch in generate_pages(
-                api_url,
-                shop["#client_id"],
-                sleep_time=interbatch_sleep_seconds,
-                max_fails_per_call=max_fails_per_call,
-            ):
-                # write batch by lines to be able to add columns
-                for row in batch:
-                    row_amended = {
-                        **row,
-                        "utc_timestamp": utc_timestamp,
-                        "vendor_id": shop["vendor_id"],
-                        "country": shop["country"],
-                    }
-                    dict_writer.writerow(row_amended)
+        with open(path_variants, "w") as outfile_var:
+            dict_writer_var = csv.DictWriter(
+                outfile_var, fieldnames=variants_column_names, extrasaction="ignore"
+            )
+            dict_writer_var.writeheader()
+            for shop in shops:
+                logger.info(f"Processing vendor_id {shop['vendor_id']}")
+                for batch in generate_pages(
+                    api_url,
+                    shop["#client_id"],
+                    sleep_time=interbatch_sleep_seconds,
+                    max_fails_per_call=max_fails_per_call,
+                ):
+                    # write batch by lines to be able to add columns
+                    for row in batch:
+                        row_amended = {
+                            **row,
+                            "utc_timestamp": utc_timestamp,
+                            "vendor_id": shop["vendor_id"],
+                            "country": shop["country"],
+                        }
+                        dict_writer.writerow(row_amended)
+                        if row['has_variants'] == True:
+                            partner_product_id = row['id']
+                            try:
+                                response = requests.get(
+                                    f"https://mpapi.mallgroup.com/v1/products/{partner_product_id}/variants?",
+                                    params=parameters_var,
+                                ).json()
+                            except Exception as e:
+                                logger.error(f"Request for variant failed. Exception {e}")
+                                # give the api some rest
+                                time.sleep(2)
+                            else:
+                                # write variants to a file
+                                for var in response["data"]:
+                                    row_amended_var = {
+                                        **var,
+                                        "utc_timestamp": utc_timestamp,
+                                    }
+                                    dict_writer_var.writerow(row_amended_var)
 
 
 if __name__ == "__main__":
